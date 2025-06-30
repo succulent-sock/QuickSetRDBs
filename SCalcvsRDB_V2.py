@@ -1,7 +1,7 @@
 """
 Release:  V2 - XX/XX/2025
 Internal: V2
-Last Updated: 06/25/2025
+Last Updated: 06/30/2025
 """
 import subprocess
 import sys
@@ -46,11 +46,11 @@ def convert_scalc_to_txt(folder):
                 basis_count += 1
                 logging.info(f"Converting {scalc}...")
                 doc = Document(currentpath)
-                with open(txt_path, 'w', encoding='utf-8') as f:
+                with open(txt_path, 'w', encoding='utf-8') as file:
                     for table in doc.tables:
                         for row in table.rows:
                             row_text = '\t'.join(cell.text.strip() for cell in row.cells)
-                            f.write(row_text + '\n')
+                            file.write(row_text + '\n')
             elif lower_name.endswith(".pdf"):
                 # docx_path = os.path.join(folder, document_name + ".docx")
                 # if not os.path.exists(docx_path):
@@ -83,8 +83,8 @@ def convert_scalc_to_txt(folder):
                                 setting_lines.append(line)
                 if setting_lines:
                     basis_count += 1
-                    with open(txt_path, 'w', encoding='utf-8') as f:
-                        f.write("\n".join(setting_lines))
+                    with open(txt_path, 'w', encoding='utf-8') as file:
+                        file.write("\n".join(setting_lines))
     return basis_count
 
 def clean_txts(folder):
@@ -101,8 +101,8 @@ def clean_txts(folder):
             else:
                 device_name = txt_file.split("_Settings")[0]
             txt_files[device_name] = {}
-            with open(currentpath, "r", encoding="utf-8") as f:
-                for line in f:
+            with open(currentpath, "r", encoding="utf-8") as file:
+                for line in file:
                     if ":=" in line:
                         key = line.split(":=")[0].split("\t")[-1].split()[-1].strip()
                         value = line.split(":=")[1].strip().split("\t")[0].split("\r")[0]
@@ -130,7 +130,7 @@ def determine_group(txt_file):
 def clean_settings_files(folder):
     """Cleans the rdb settings text files by parsing out the settings values in a nested dictionary. """
     # key: device name
-    # value: dictionary of settings
+    # value: dictionary of settings by group
     settings_files = {}
     for settings_file in os.listdir(folder):
         currentpath = folder + "\\" + settings_file
@@ -146,9 +146,9 @@ def clean_settings_files(folder):
                 print(ole.listdir())
                 for entry in ole.listdir():
                     txt_file = "/".join(entry)
-                    if ".txt" in txt_file.lower():
-                        if int(determine_group(txt_file.split("/")[-1])) > 1:
-                            continue
+                    if ".txt" in txt_file.lower() and "_" in txt_file.lower():
+                        # Store settings group
+                        settings_files[device_name][txt_file.split("/")[-1]] = {}
                         with ole.openstream(entry) as stream:
                             content = stream.read().decode('utf-8', errors='ignore')
                             content = content.split("\r")
@@ -163,7 +163,7 @@ def clean_settings_files(folder):
                                         value = ''
                                     else:
                                         value = l[1].strip().strip('"').strip("'")
-                                    settings_files[device_name][key] = value
+                                    settings_files[device_name][txt_file.split("/")[-1]][key] = value
     return settings_files
 
 
@@ -172,46 +172,52 @@ def compare(txt_files, settings_files):
     """Compares the dictionaries acquired from previous data cleaning. Settings Basis points are compared to Settings file points."""
     output_summary = "Settings Basis vs. Settings File Comparison Summary\n\n"
     # Iterate over all settings basis text files
-    for device, points in txt_files.items():
+    for device, basis_points in txt_files.items():
         print(f"{device:<40}{'Attribute':<20}{'Settings Basis':<40}{'Settings File':<40}")
         print(f"{'-':<40}{'-':<20}{'-':<40}{'-':<40}")
         mismatch = False
-        # Find matching settings file
+        # Find matching device settings
         matching_rdb = settings_files.get(device)
         if matching_rdb:
             # Add device name
             output_summary += f"***** {device} *****\n\n"
             # Iterate over all points in an individual settings basis
-            for key, value in points.items():
+            for key, value in basis_points.items():
                 if "–" in key or "-" in key:
                     output_summary += f"{key} is listed in Settings Basis as a range of values. Please check manually.\n\n"
                     mismatch = True
                     continue
-                # Compare setting value in settings basis to the settings file value
-                matching_point = settings_files[device].get(key)
-                try:
-                    print(f"{'':<40}{key:<20}{value:<40}{matching_point:<40}")
-                except:
-                    print(f"{'':<40}{key:<20}{value:<40}{'':<40}")
-                if not matching_point:
+                # Iterate over settings groups
+                found = 0
+                for settings_group in matching_rdb.keys():
+                    matching_point = settings_files[device][settings_group].get(key)
+                    print(f"{settings_group:<40}")
+                    try:
+                        print(f"{'':<40}{key:<20}{value:<40}{matching_point:<40}")
+                    except:
+                        print(f"{'':<40}{key:<20}{value:<40}{'':<40}")
+                    if not matching_point:
+                        continue
+                    elif value != matching_point:
+                        # Ensure numerical values are the same
+                        try:
+                            if float(value) != float(matching_point):
+                                # Discrepancy was found
+                                output_summary += f"The value of {key} in {settings_group} does not match the value of {key} in the Settings Basis.\n"
+                                output_summary += f"Settings Basis: {key} := {value}\n"
+                                output_summary += f"Settings File ({settings_group}): {key} := {matching_point}\n\n"
+                                mismatch = True
+                        except ValueError:
+                            # Discrepancy was found
+                            output_summary += f"The value of {key} in {settings_group} does not match the value of {key} in the Settings Basis.\n"
+                            output_summary += f"Settings Basis: {key} := {value}\n"
+                            output_summary += f"Settings File ({settings_group}): {key} := {matching_point}\n\n"
+                            mismatch = True
+                    found += 1
+                if found == 0:
                     # Discrepancy was found
                     output_summary += f"{key} was not found in settings file.\n\n"
                     mismatch = True
-                elif value != matching_point:
-                    # Ensure numerical values are the same
-                    try:
-                        if float(value) != float(matching_point):
-                            # Discrepancy was found
-                            output_summary += f"The values of {key} do not match.\n"
-                            output_summary += f"Settings Basis: {key} := {value}\n"
-                            output_summary += f"Settings File: {key} := {matching_point}\n\n"
-                            mismatch = True
-                    except ValueError:
-                        # Discrepancy was found
-                        output_summary += f"The values of {key} do not match.\n"
-                        output_summary += f"Settings Basis: {key} := {value}\n"
-                        output_summary += f"Settings File: {key} := {matching_point}\n\n"
-                        mismatch = True
         else:
             output_summary += f"Settings file for {device} was not found.\n\n"
         if not mismatch and matching_rdb:
@@ -244,20 +250,22 @@ def main():
             tkinter.messagebox.showinfo("", f"No rdb files to compare.")
             return 2
         
-        notes = compare(txt_files, settings_files)
+        # # print(settings_files)
+
+        # notes = compare(txt_files, settings_files)
 
         # Remove new text files
         delete_txts(folder)
 
-        # Output notes
-        output_file = "Settings Comparison Summary.txt"
-        output_file = folder + "/" + output_file
-        with open(output_file, 'w') as ofile:
-            ofile.write(notes)
-        # Display popup window with completion message
-        logging.info("Comparison Complete.")
-        tkinter.messagebox.showinfo("", f"Comparison Notes saved at {output_file}")
-        return 0
+        # # Output notes
+        # output_file = "Settings Comparison Summary.txt"
+        # output_file = folder + "/" + output_file
+        # with open(output_file, 'w') as ofile:
+        #     ofile.write(notes)
+        # # Display popup window with completion message
+        # logging.info("Comparison Complete.")
+        # tkinter.messagebox.showinfo("", f"Comparison Notes saved at {output_file}")
+        # return 0
 
 if __name__ == "__main__":
     main()
