@@ -108,7 +108,7 @@ def clean_txts(folder):
                 for line in f:
                     if ":=" in line:
                         key = line.split(":=")[0].split("\t")[-1].split()[-1].strip()
-                        value = line.split(":=")[1].strip().split("\t")[0].split("\r")[0]
+                        value = line.split(":=")[1].strip().split("\t")[0].split("\r")[0].split("#")[0].split(',"')[0].split(",'")[0]
                         if 'not used' in value.lower():
                             value = value.split(" ")[0]
                         txt_files[device_name][key] = value
@@ -165,7 +165,7 @@ def clean_settings_files(folder):
                                     if ',""' in line or ",''" in line:
                                         value = ''
                                     else:
-                                        value = l[1].strip().strip('"').strip("'")
+                                        value = l[1].split('#')[0].strip().strip('"').strip("'")
                                     settings_files[device_name][txt_file.split("/")[-1]][key] = value
     return settings_files
 
