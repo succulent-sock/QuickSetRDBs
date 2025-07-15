@@ -124,17 +124,14 @@ def delete_txts(folder):
     for file in paths:
         os.remove(file)
 
-def determine_group(txt_file):
-    if re.search(r"set_s\d.txt", txt_file.lower()) or re.search(r"set_\d.txt", txt_file.lower()):
-        digit = re.findall(r'\d', txt_file)
-        return digit[-1]
-    else:
-        return -1
-
 def clean_settings_files(folder):
     """Cleans the rdb settings text files by parsing out the settings values in a nested dictionary. """
     # key: device name
     # value: dictionary of settings by group
+        # key: settings group
+        # value: dictionary of settings within group
+            # key: setting in rdb
+            # value: current value of setting in rdb
     settings_files = {}
     for settings_file in os.listdir(folder):
         currentpath = folder + "\\" + settings_file
@@ -172,7 +169,32 @@ def clean_settings_files(folder):
                                     settings_files[device_name][txt_file.split("/")[-1]][key] = value
     return settings_files
 
+def determine_group(txt_file):
+    if re.search(r"set_s\d.txt", txt_file.lower()) or re.search(r"set_\d.txt", txt_file.lower()):
+        digit = re.findall(r'\d', txt_file)
+        return digit[-1]
+    else:
+        return -1
 
+def iterate_over_groups(all_settings_groups):
+    """ For E87PG, if it's set to P, ignore the group checks for anything that is found in SET_P87.txt instead.
+        If it's set to G then we do the recursive checks of each set_S1, S2 etc. """
+    to_iterate_or_not_to = True
+    target_setting = 'E87PG'
+    for grouped_settings in all_settings_groups.values():
+        current_target_value = grouped_settings.get(target_setting)
+        if current_target_value:
+            if current_target_value == 'P':
+                to_iterate_or_not_to = False
+                break
+    if to_iterate_or_not_to:
+        return all_settings_groups
+    else:
+        old_groups = all_settings_groups.keys() + []
+        for group in old_groups:
+            if determine_group(group) != -1:
+                all_settings_groups.pop(group)
+        return all_settings_groups
 
 def compare(txt_files, settings_files):
     """Compares the dictionaries acquired from previous data cleaning. Settings Basis points are compared to Settings file points."""
@@ -203,9 +225,18 @@ def compare(txt_files, settings_files):
                     output_summary += f"{key} is listed in Settings Basis as a range of values. Please check manually.\n\n"
                     mismatch = True
                     continue
+
+                # key: device name
+                # value: dictionary of settings by group
+                    # key: settings group
+                    # value: dictionary of settings within group
+                        # key: setting in rdb
+                        # value: current value of setting in rdb
+                groups_to_iterate = iterate_over_groups(matching_rdb)
+
                 # Iterate over settings groups
                 found = 0
-                for settings_group in matching_rdb.keys():
+                for settings_group in groups_to_iterate:
                     matching_point = settings_files[similar_rdbs[0]][settings_group].get(key)
                     print(f"{settings_group:<40}")
                     try:
